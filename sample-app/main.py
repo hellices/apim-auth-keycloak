@@ -20,6 +20,7 @@ class OIDCConfig:
     authority: str
     client_id: str
     client_secret: str
+    # 'openid' is required for OIDC; 'email' and 'profile' provide user info
     scope: str = "openid email profile"
     
     @property
@@ -211,7 +212,7 @@ class AIFoundryClient:
                     headers=self._get_headers()
                 )
             except Exception:
-                raise Exception("Authentication expired. Please re-authenticate.")
+                raise Exception("Failed to refresh authentication token. Please re-authenticate.")
         
         if response.status_code != 200:
             raise Exception(f"AI Foundry request failed: {response.text}")

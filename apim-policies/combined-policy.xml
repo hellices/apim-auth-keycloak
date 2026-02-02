@@ -33,7 +33,17 @@
         <set-variable name="jwt" value="@(context.Request.Headers.GetValueOrDefault("Authorization","").Split(' ').Last().AsJwt())" />
         <set-variable name="userId" value="@(((Jwt)context.Variables["jwt"])?.Subject)" />
         <set-variable name="userEmail" value="@(((Jwt)context.Variables["jwt"])?.Claims.GetValueOrDefault("email", "unknown"))" />
-        <set-variable name="userRoles" value="@(String.Join(",", ((Jwt)context.Variables["jwt"])?.Claims.GetValueOrDefault("realm_access", "{}").Replace("{", "").Replace("}", "").Split(',').Where(s => s.Contains("roles")).SelectMany(s => s.Split(':').Skip(1)).Select(s => s.Trim().Replace("[", "").Replace("]", "").Replace("\"", "")).ToArray() ?? new string[0]))" />
+        <set-variable name="userRoles" value="@{
+            try {
+                var jwt = (Jwt)context.Variables["jwt"];
+                var realmAccess = jwt?.Claims.GetValueOrDefault("realm_access", "{}");
+                var parsed = JObject.Parse(realmAccess);
+                var roles = parsed["roles"] as JArray;
+                return roles != null ? String.Join(",", roles.Select(r => r.ToString())) : "";
+            } catch {
+                return "";
+            }
+        }" />
         <set-variable name="requestTimestamp" value="@(DateTime.UtcNow.ToString("o"))" />
         
         <!-- Add user context headers -->
@@ -92,8 +102,8 @@
             }
         }" />
         
-        <!-- Log prompt to Event Hub -->
-        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+        <!-- Log prompt to Event Hub (partition-key distributes by user for scalability) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@((string)context.Variables["userId"])">@{
             return new JObject(
                 new JProperty("eventType", "ai_prompt_request"),
                 new JProperty("userId", (string)context.Variables["userId"]),
@@ -138,8 +148,8 @@
             }
         }" />
         
-        <!-- Log usage to Event Hub -->
-        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+        <!-- Log usage to Event Hub (partition-key distributes by user for scalability) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@((string)context.Variables["userId"])">@{
             return new JObject(
                 new JProperty("eventType", "ai_prompt_response"),
                 new JProperty("userId", (string)context.Variables["userId"]),
@@ -168,7 +178,7 @@
     <on-error>
         <base />
         
-        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@(context.Variables.ContainsKey("userId") ? (string)context.Variables["userId"] : "unknown")">@{
             return new JObject(
                 new JProperty("eventType", "ai_request_error"),
                 new JProperty("userId", context.Variables.ContainsKey("userId") ? (string)context.Variables["userId"] : "unknown"),

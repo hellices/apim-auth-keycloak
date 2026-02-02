@@ -31,8 +31,8 @@
             }
         }" />
         
-        <!-- Log prompt usage to Event Hub for detailed analysis -->
-        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+        <!-- Log prompt usage to Event Hub for detailed analysis (partition-key distributes by user) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@(context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown"))">@{
             return new JObject(
                 new JProperty("event", "prompt_usage"),
                 new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
@@ -85,8 +85,8 @@
             }
         }" />
         
-        <!-- Log usage metrics -->
-        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+        <!-- Log usage metrics (partition-key distributes by user) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@(context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown"))">@{
             return new JObject(
                 new JProperty("event", "prompt_response"),
                 new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),

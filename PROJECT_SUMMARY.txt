@@ -1,0 +1,144 @@
+Project: Keycloak Authentication with Azure APIM for AI Foundry Models
+======================================================================
+
+OVERVIEW
+--------
+This project provides a complete infrastructure and configuration setup for:
+1. Keycloak identity provider running on Azure Kubernetes Service (AKS)
+2. Azure API Management (APIM) as an API gateway
+3. Azure OpenAI (AI Foundry) service integration
+4. JWT-based authentication flow from Keycloak to APIM to Azure OpenAI
+
+DELIVERABLES
+------------
+
+Infrastructure (Azure Developer CLI - azd)
+- azure.yaml: azd configuration
+- infra/main.bicep: Main infrastructure template
+- infra/core/host/aks.bicep: AKS cluster definition
+- infra/core/host/container-registry.bicep: Container registry
+- infra/core/ai/openai.bicep: Azure OpenAI service
+- infra/core/gateway/apim.bicep: API Management service
+- infra/abbreviations.json: Azure naming conventions
+Total: ~318 lines of Bicep code
+
+Kubernetes Manifests
+- kubernetes/keycloak-deployment.yaml: Complete Keycloak deployment
+  - PostgreSQL database
+  - Keycloak application
+  - LoadBalancer service
+Total: ~162 lines
+
+APIM Configuration
+- apim-policies/openai-api-policy.xml: JWT validation policy
+- apim-policies/openai-api-spec.json: OpenAPI specification
+Total: ~212 lines
+
+Automation Scripts
+- scripts/get-keycloak-urls.sh: Extract Keycloak configuration
+- scripts/configure-apim.sh: Configure APIM with OpenAI and Keycloak
+- scripts/test-integration.sh: End-to-end integration test
+Total: ~330 lines
+
+Documentation
+- README.md: Project overview and quick reference (167 lines)
+- QUICKSTART.md: Fast 30-minute setup guide (165 lines)
+- SETUP.md: Comprehensive step-by-step guide (376 lines)
+- KEYCLOAK-SETUP-KR.md: Korean language Keycloak guide (251 lines)
+- ARCHITECTURE.md: System architecture and diagrams (188 lines)
+- TROUBLESHOOTING.md: Common issues and solutions (446 lines)
+Total: ~1,593 lines of documentation
+
+Configuration Files
+- .gitignore: Git exclusions
+- .env.template: Environment variable template
+
+FEATURES
+--------
+✓ Automated infrastructure deployment with azd
+✓ Keycloak on AKS with PostgreSQL backend
+✓ JWT token validation in APIM
+✓ Azure OpenAI integration through APIM
+✓ Rate limiting (100 requests/minute per user)
+✓ CORS support
+✓ Comprehensive error handling
+✓ Security best practices
+✓ Multiple language support (English + Korean)
+✓ Helper scripts for automation
+✓ Complete testing procedures
+
+ARCHITECTURE
+------------
+User → Keycloak (AKS) → JWT Token → APIM (Validation) → Azure OpenAI
+
+Components:
+1. Keycloak: Identity provider with OIDC/OAuth2
+2. PostgreSQL: Keycloak database
+3. AKS: Kubernetes cluster hosting Keycloak
+4. ACR: Container registry
+5. APIM: API gateway with JWT validation
+6. Azure OpenAI: GPT-4 model deployment
+
+Security:
+- JWT signature validation
+- Token issuer verification
+- Audience validation
+- Rate limiting per user
+- API key management in APIM
+- Secrets stored securely
+
+DEPLOYMENT STEPS
+----------------
+1. Deploy infrastructure: azd up (~10 minutes)
+2. Deploy Keycloak: kubectl apply -f kubernetes/keycloak-deployment.yaml (~5 minutes)
+3. Configure Keycloak: Create realm, client, user (~10 minutes)
+4. Configure APIM: Update named values, import API, apply policies (~5 minutes)
+5. Test: Get token and call API (~2 minutes)
+
+Total setup time: ~30 minutes
+
+TESTING
+-------
+Provided test script validates:
+- Keycloak authentication
+- JWT token issuance
+- APIM token validation
+- Unauthorized request rejection (401)
+- Authorized request success (200)
+- Azure OpenAI integration
+
+DOCUMENTATION QUALITY
+--------------------
+- Beginner-friendly quick start guide
+- Detailed step-by-step setup instructions
+- Architecture diagrams and flow charts
+- Comprehensive troubleshooting guide
+- Korean language support for Keycloak setup
+- Security best practices
+- Common error messages reference
+
+CODE QUALITY
+------------
+- Bicep templates validated (no warnings)
+- YAML syntax validated
+- JSON files validated
+- Executable scripts with proper permissions
+- Modular structure
+- Reusable components
+
+TOTAL LINES OF CODE
+-------------------
+- Infrastructure: ~318 lines
+- Kubernetes: ~162 lines
+- APIM Policies: ~212 lines
+- Scripts: ~330 lines
+- Documentation: ~1,593 lines
+Grand Total: ~2,615 lines
+
+COMPATIBILITY
+-------------
+- Azure CLI
+- Azure Developer CLI (azd)
+- kubectl
+- Bash shell
+- Works on Linux/macOS/WSL

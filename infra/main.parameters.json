@@ -1,0 +1,14 @@
+# Azure Developer CLI Parameters Template
+# This file is used during 'azd up' to provide parameters to the infrastructure
+
+# Uncomment and set values as needed
+
+# environmentName: "apim-keycloak-dev"
+# location: "koreacentral"
+
+# Optional: Override default resource names
+# resourceGroupName: "rg-apim-keycloak"
+# aksClusterName: "aks-apim-keycloak"
+# apimServiceName: "apim-apim-keycloak"
+# openAiServiceName: "cog-apim-keycloak"
+# containerRegistryName: "crapimkeycloak"

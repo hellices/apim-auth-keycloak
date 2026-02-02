@@ -1,0 +1,56 @@
+<policies>
+    <inbound>
+        <base />
+        <!-- Validate JWT token from Keycloak -->
+        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Access token is missing or invalid.">
+            <openid-config url="{{keycloak-issuer-url}}/.well-known/openid-configuration" />
+            <audiences>
+                <audience>apim-client</audience>
+            </audiences>
+            <issuers>
+                <issuer>{{keycloak-issuer-url}}</issuer>
+            </issuers>
+            <required-claims>
+                <claim name="realm_access" match="any">
+                    <value>user</value>
+                </claim>
+            </required-claims>
+        </validate-jwt>
+        
+        <!-- Set backend service URL to Azure OpenAI -->
+        <set-backend-service base-url="{{openai-endpoint}}/openai" />
+        
+        <!-- Add OpenAI API key to the request -->
+        <set-header name="api-key" exists-action="override">
+            <value>{{openai-key}}</value>
+        </set-header>
+        
+        <!-- Remove Authorization header before forwarding to backend -->
+        <set-header name="Authorization" exists-action="delete" />
+        
+        <!-- Add rate limiting per user -->
+        <rate-limit-by-key calls="100" renewal-period="60" counter-key="@(context.Request.Headers.GetValueOrDefault("Authorization","").AsJwt()?.Subject)" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <!-- Add CORS headers if needed -->
+        <cors>
+            <allowed-origins>
+                <origin>*</origin>
+            </allowed-origins>
+            <allowed-methods>
+                <method>GET</method>
+                <method>POST</method>
+            </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>
+        </cors>
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: apim-auth-keycloak
+metadata:
+  template: apim-auth-keycloak@0.0.1-beta
+
+services:
+  keycloak:
+    project: ./infra
+    language: bicep
+    host: aks
+
+infra:
+  provider: bicep
+  path: ./infra
+  module: main

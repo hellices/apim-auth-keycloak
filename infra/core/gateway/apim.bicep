@@ -14,9 +14,6 @@ param sku object = {
   capacity: 1
 }
 
-@description('Name of the OpenAI service to integrate with')
-param openAiServiceName string
-
 @description('Endpoint of the OpenAI service')
 param openAiEndpoint string
 

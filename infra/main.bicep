@@ -9,9 +9,6 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-@description('Id of the user or app to assign application roles')
-param principalId string = ''
-
 // Optional parameters
 @description('Name of the resource group')
 param resourceGroupName string = ''
@@ -97,7 +94,6 @@ module apim './core/gateway/apim.bicep' = {
     tags: tags
     publisherEmail: 'admin@contoso.com'
     publisherName: 'Contoso'
-    openAiServiceName: openAi.outputs.name
     openAiEndpoint: openAi.outputs.endpoint
   }
 }

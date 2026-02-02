@@ -35,4 +35,5 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01
 output name string = openAi.name
 output id string = openAi.id
 output endpoint string = openAi.properties.endpoint
-output key string = openAi.listKeys().key1
+// Note: Key should be retrieved separately for security, not exposed in outputs
+// Use: az cognitiveservices account keys list --resource-group <rg> --name <name>

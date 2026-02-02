@@ -1,0 +1,131 @@
+<!--
+    Azure API Management Policy for AI Foundry Prompt Logging
+    
+    This policy captures and logs prompts sent to AI Foundry endpoints
+    for monitoring and audit purposes.
+-->
+<policies>
+    <inbound>
+        <base />
+        
+        <!-- Store the request body for logging -->
+        <set-variable name="requestBody" value="@(context.Request.Body.As<string>(preserveContent: true))" />
+        
+        <!-- Parse AI prompt from request body -->
+        <set-variable name="promptData" value="@{
+            try {
+                var body = JObject.Parse((string)context.Variables["requestBody"]);
+                var messages = body["messages"];
+                if (messages != null && messages.HasValues) {
+                    var lastMessage = messages.Last;
+                    return new JObject(
+                        new JProperty("role", lastMessage["role"]?.ToString() ?? "unknown"),
+                        new JProperty("content", lastMessage["content"]?.ToString()?.Substring(0, Math.Min(500, lastMessage["content"]?.ToString()?.Length ?? 0)) ?? ""),
+                        new JProperty("messageCount", messages.Count()),
+                        new JProperty("model", body["model"]?.ToString() ?? "unknown")
+                    ).ToString();
+                }
+                return new JObject(new JProperty("raw", "Non-chat format")).ToString();
+            } catch {
+                return new JObject(new JProperty("error", "Failed to parse request")).ToString();
+            }
+        }" />
+        
+        <!-- Log prompt usage to Event Hub for detailed analysis (partition-key distributes by user) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@(context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown"))">@{
+            return new JObject(
+                new JProperty("event", "prompt_usage"),
+                new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
+                new JProperty("userEmail", context.Request.Headers.GetValueOrDefault("X-User-Email", "unknown")),
+                new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                new JProperty("operationId", context.RequestId),
+                new JProperty("apiPath", context.Request.Url.Path),
+                new JProperty("promptData", JObject.Parse((string)context.Variables["promptData"])),
+                new JProperty("subscriptionId", context.Subscription?.Id ?? "unknown"),
+                new JProperty("productId", context.Product?.Id ?? "unknown")
+            ).ToString();
+        }</log-to-eventhub>
+        
+        <!-- Also trace to Application Insights -->
+        <trace source="AI-Foundry-Prompt" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "prompt_request"),
+                    new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("promptSummary", JObject.Parse((string)context.Variables["promptData"]))
+                ).ToString();
+            }</message>
+        </trace>
+    </inbound>
+    
+    <backend>
+        <base />
+    </backend>
+    
+    <outbound>
+        <base />
+        
+        <!-- Log AI response metadata -->
+        <set-variable name="responseBody" value="@(context.Response.Body.As<string>(preserveContent: true))" />
+        
+        <set-variable name="responseData" value="@{
+            try {
+                var body = JObject.Parse((string)context.Variables["responseBody"]);
+                var usage = body["usage"];
+                return new JObject(
+                    new JProperty("promptTokens", usage?["prompt_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("completionTokens", usage?["completion_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("totalTokens", usage?["total_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("model", body["model"]?.ToString() ?? "unknown")
+                ).ToString();
+            } catch {
+                return new JObject(new JProperty("error", "Failed to parse response")).ToString();
+            }
+        }" />
+        
+        <!-- Log usage metrics (partition-key distributes by user) -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-key="@(context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown"))">@{
+            return new JObject(
+                new JProperty("event", "prompt_response"),
+                new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
+                new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                new JProperty("operationId", context.RequestId),
+                new JProperty("responseData", JObject.Parse((string)context.Variables["responseData"])),
+                new JProperty("responseTime", context.Elapsed.TotalMilliseconds),
+                new JProperty("statusCode", context.Response.StatusCode)
+            ).ToString();
+        }</log-to-eventhub>
+        
+        <trace source="AI-Foundry-Prompt" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "prompt_response"),
+                    new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("usage", JObject.Parse((string)context.Variables["responseData"])),
+                    new JProperty("responseTime", context.Elapsed.TotalMilliseconds)
+                ).ToString();
+            }</message>
+        </trace>
+    </outbound>
+    
+    <on-error>
+        <base />
+        
+        <trace source="AI-Foundry-Prompt" severity="error">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "prompt_error"),
+                    new JProperty("userId", context.Request.Headers.GetValueOrDefault("X-User-Id", "unknown")),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("error", context.LastError.Message),
+                    new JProperty("errorReason", context.LastError.Reason)
+                ).ToString();
+            }</message>
+        </trace>
+    </on-error>
+</policies>

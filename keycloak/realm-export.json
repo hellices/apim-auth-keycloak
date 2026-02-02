@@ -1,0 +1,100 @@
+{
+  "id": "ai-foundry-realm",
+  "realm": "ai-foundry",
+  "displayName": "AI Foundry",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "ai-user",
+        "description": "Standard AI Foundry user"
+      },
+      {
+        "name": "ai-admin",
+        "description": "AI Foundry administrator"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ai-foundry-client",
+      "name": "AI Foundry Client",
+      "description": "Client application for AI Foundry integration",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "your-client-secret-here",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "https://your-apim-gateway.azure-api.net/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "https://your-apim-gateway.azure-api.net"
+      ],
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "email",
+        "profile",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "email": "testuser@example.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "testpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ai-user"
+      ]
+    },
+    {
+      "username": "admin",
+      "email": "admin@example.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "adminpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ai-admin"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+<!--
+    Combined API Management Policy
+    
+    This is a combined policy that includes both OIDC validation and AI prompt logging.
+    Apply this policy to AI Foundry API endpoints.
+-->
+<policies>
+    <inbound>
+        <base />
+        
+        <!-- ================================== -->
+        <!-- OIDC Token Validation Section     -->
+        <!-- ================================== -->
+        
+        <!-- Validate JWT from Keycloak OIDC -->
+        <validate-jwt header-name="Authorization" 
+                      failed-validation-httpcode="401" 
+                      failed-validation-error-message="Unauthorized. Invalid or missing token.">
+            <openid-config url="{{keycloak-openid-config-url}}" />
+            <audiences>
+                <audience>ai-foundry-client</audience>
+            </audiences>
+            <issuers>
+                <issuer>{{keycloak-issuer-url}}</issuer>
+            </issuers>
+            <required-claims>
+                <claim name="sub" match="all" />
+                <claim name="email" match="all" />
+            </required-claims>
+        </validate-jwt>
+        
+        <!-- Extract user information from JWT -->
+        <set-variable name="jwt" value="@(context.Request.Headers.GetValueOrDefault("Authorization","").Split(' ').Last().AsJwt())" />
+        <set-variable name="userId" value="@(((Jwt)context.Variables["jwt"])?.Subject)" />
+        <set-variable name="userEmail" value="@(((Jwt)context.Variables["jwt"])?.Claims.GetValueOrDefault("email", "unknown"))" />
+        <set-variable name="userRoles" value="@(String.Join(",", ((Jwt)context.Variables["jwt"])?.Claims.GetValueOrDefault("realm_access", "{}").Replace("{", "").Replace("}", "").Split(',').Where(s => s.Contains("roles")).SelectMany(s => s.Split(':').Skip(1)).Select(s => s.Trim().Replace("[", "").Replace("]", "").Replace("\"", "")).ToArray() ?? new string[0]))" />
+        <set-variable name="requestTimestamp" value="@(DateTime.UtcNow.ToString("o"))" />
+        
+        <!-- Add user context headers -->
+        <set-header name="X-User-Id" exists-action="override">
+            <value>@((string)context.Variables["userId"])</value>
+        </set-header>
+        <set-header name="X-User-Email" exists-action="override">
+            <value>@((string)context.Variables["userEmail"])</value>
+        </set-header>
+        <set-header name="X-User-Roles" exists-action="override">
+            <value>@((string)context.Variables["userRoles"])</value>
+        </set-header>
+        
+        <!-- Log authentication event -->
+        <trace source="AI-Foundry-OIDC" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "user_authenticated"),
+                    new JProperty("userId", (string)context.Variables["userId"]),
+                    new JProperty("userEmail", (string)context.Variables["userEmail"]),
+                    new JProperty("userRoles", (string)context.Variables["userRoles"]),
+                    new JProperty("timestamp", (string)context.Variables["requestTimestamp"]),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("apiPath", context.Request.Url.Path)
+                ).ToString();
+            }</message>
+        </trace>
+        
+        <!-- ================================== -->
+        <!-- AI Prompt Logging Section         -->
+        <!-- ================================== -->
+        
+        <!-- Capture request body for prompt logging -->
+        <set-variable name="requestBody" value="@(context.Request.Body.As<string>(preserveContent: true))" />
+        
+        <!-- Parse and log prompt data -->
+        <set-variable name="promptData" value="@{
+            try {
+                var body = JObject.Parse((string)context.Variables["requestBody"]);
+                var messages = body["messages"];
+                if (messages != null && messages.HasValues) {
+                    var userMessages = messages.Where(m => m["role"]?.ToString() == "user").ToList();
+                    var lastUserMessage = userMessages.LastOrDefault();
+                    return new JObject(
+                        new JProperty("lastUserPrompt", lastUserMessage?["content"]?.ToString()?.Substring(0, Math.Min(500, lastUserMessage?["content"]?.ToString()?.Length ?? 0)) ?? ""),
+                        new JProperty("totalMessages", messages.Count()),
+                        new JProperty("userMessageCount", userMessages.Count),
+                        new JProperty("model", body["model"]?.ToString() ?? "unknown"),
+                        new JProperty("temperature", body["temperature"]?.Value<double>() ?? 1.0),
+                        new JProperty("maxTokens", body["max_tokens"]?.Value<int>() ?? 0)
+                    ).ToString();
+                }
+                return new JObject(new JProperty("format", "non-chat")).ToString();
+            } catch {
+                return new JObject(new JProperty("parseError", true)).ToString();
+            }
+        }" />
+        
+        <!-- Log prompt to Event Hub -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+            return new JObject(
+                new JProperty("eventType", "ai_prompt_request"),
+                new JProperty("userId", (string)context.Variables["userId"]),
+                new JProperty("userEmail", (string)context.Variables["userEmail"]),
+                new JProperty("userRoles", (string)context.Variables["userRoles"]),
+                new JProperty("timestamp", (string)context.Variables["requestTimestamp"]),
+                new JProperty("operationId", context.RequestId),
+                new JProperty("apiPath", context.Request.Url.Path),
+                new JProperty("prompt", JObject.Parse((string)context.Variables["promptData"])),
+                new JProperty("clientIp", context.Request.IpAddress),
+                new JProperty("subscriptionId", context.Subscription?.Id ?? "unknown"),
+                new JProperty("productId", context.Product?.Id ?? "unknown")
+            ).ToString();
+        }</log-to-eventhub>
+    </inbound>
+    
+    <backend>
+        <base />
+    </backend>
+    
+    <outbound>
+        <base />
+        
+        <!-- Capture response for usage logging -->
+        <set-variable name="responseBody" value="@(context.Response.Body.As<string>(preserveContent: true))" />
+        
+        <set-variable name="usageData" value="@{
+            try {
+                var body = JObject.Parse((string)context.Variables["responseBody"]);
+                var usage = body["usage"];
+                var choices = body["choices"];
+                return new JObject(
+                    new JProperty("promptTokens", usage?["prompt_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("completionTokens", usage?["completion_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("totalTokens", usage?["total_tokens"]?.Value<int>() ?? 0),
+                    new JProperty("model", body["model"]?.ToString() ?? "unknown"),
+                    new JProperty("finishReason", choices?.FirstOrDefault()?["finish_reason"]?.ToString() ?? "unknown"),
+                    new JProperty("choicesCount", choices?.Count() ?? 0)
+                ).ToString();
+            } catch {
+                return new JObject(new JProperty("parseError", true)).ToString();
+            }
+        }" />
+        
+        <!-- Log usage to Event Hub -->
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+            return new JObject(
+                new JProperty("eventType", "ai_prompt_response"),
+                new JProperty("userId", (string)context.Variables["userId"]),
+                new JProperty("userEmail", (string)context.Variables["userEmail"]),
+                new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                new JProperty("operationId", context.RequestId),
+                new JProperty("usage", JObject.Parse((string)context.Variables["usageData"])),
+                new JProperty("responseTimeMs", context.Elapsed.TotalMilliseconds),
+                new JProperty("statusCode", context.Response.StatusCode)
+            ).ToString();
+        }</log-to-eventhub>
+        
+        <trace source="AI-Foundry-OIDC" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "ai_request_completed"),
+                    new JProperty("userId", (string)context.Variables["userId"]),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("usage", JObject.Parse((string)context.Variables["usageData"])),
+                    new JProperty("responseTimeMs", context.Elapsed.TotalMilliseconds)
+                ).ToString();
+            }</message>
+        </trace>
+    </outbound>
+    
+    <on-error>
+        <base />
+        
+        <log-to-eventhub logger-id="ai-foundry-logger" partition-id="0">@{
+            return new JObject(
+                new JProperty("eventType", "ai_request_error"),
+                new JProperty("userId", context.Variables.ContainsKey("userId") ? (string)context.Variables["userId"] : "unknown"),
+                new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                new JProperty("operationId", context.RequestId),
+                new JProperty("error", context.LastError.Message),
+                new JProperty("errorReason", context.LastError.Reason),
+                new JProperty("statusCode", context.Response?.StatusCode ?? 500)
+            ).ToString();
+        }</log-to-eventhub>
+        
+        <trace source="AI-Foundry-OIDC" severity="error">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "ai_request_error"),
+                    new JProperty("userId", context.Variables.ContainsKey("userId") ? (string)context.Variables["userId"] : "unknown"),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("error", context.LastError.Message)
+                ).ToString();
+            }</message>
+        </trace>
+    </on-error>
+</policies>

@@ -1,0 +1,99 @@
+<!--
+    Azure API Management Policy for AI Foundry + OIDC Integration
+    
+    This policy validates JWT tokens from Keycloak (or other OIDC providers)
+    and logs user activity for monitoring purposes.
+-->
+<policies>
+    <inbound>
+        <base />
+        
+        <!-- Validate JWT from Keycloak OIDC -->
+        <validate-jwt header-name="Authorization" 
+                      failed-validation-httpcode="401" 
+                      failed-validation-error-message="Unauthorized. Invalid or missing token.">
+            <openid-config url="{{keycloak-openid-config-url}}" />
+            <audiences>
+                <audience>ai-foundry-client</audience>
+            </audiences>
+            <issuers>
+                <issuer>{{keycloak-issuer-url}}</issuer>
+            </issuers>
+            <required-claims>
+                <claim name="sub" match="all" />
+                <claim name="email" match="all" />
+            </required-claims>
+        </validate-jwt>
+        
+        <!-- Extract user information from JWT for logging -->
+        <set-variable name="userId" value="@(context.Request.Headers.GetValueOrDefault("Authorization","").Split(' ').Last().AsJwt()?.Subject)" />
+        <set-variable name="userEmail" value="@(context.Request.Headers.GetValueOrDefault("Authorization","").Split(' ').Last().AsJwt()?.Claims.GetValueOrDefault("email", "unknown"))" />
+        <set-variable name="requestTimestamp" value="@(DateTime.UtcNow.ToString("o"))" />
+        
+        <!-- Add user context headers for downstream services -->
+        <set-header name="X-User-Id" exists-action="override">
+            <value>@((string)context.Variables["userId"])</value>
+        </set-header>
+        <set-header name="X-User-Email" exists-action="override">
+            <value>@((string)context.Variables["userEmail"])</value>
+        </set-header>
+        <set-header name="X-Request-Timestamp" exists-action="override">
+            <value>@((string)context.Variables["requestTimestamp"])</value>
+        </set-header>
+        
+        <!-- Log authentication event to Application Insights -->
+        <trace source="OIDC-Auth" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "user_authentication"),
+                    new JProperty("userId", (string)context.Variables["userId"]),
+                    new JProperty("userEmail", (string)context.Variables["userEmail"]),
+                    new JProperty("timestamp", (string)context.Variables["requestTimestamp"]),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("apiPath", context.Request.Url.Path),
+                    new JProperty("method", context.Request.Method)
+                ).ToString();
+            }</message>
+        </trace>
+    </inbound>
+    
+    <backend>
+        <base />
+    </backend>
+    
+    <outbound>
+        <base />
+        
+        <!-- Log response status for user activity tracking -->
+        <trace source="OIDC-Auth" severity="information">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "api_response"),
+                    new JProperty("userId", (string)context.Variables["userId"]),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("statusCode", context.Response.StatusCode),
+                    new JProperty("responseTime", context.Elapsed.TotalMilliseconds)
+                ).ToString();
+            }</message>
+        </trace>
+    </outbound>
+    
+    <on-error>
+        <base />
+        
+        <!-- Log authentication/authorization errors -->
+        <trace source="OIDC-Auth" severity="error">
+            <message>@{
+                return new JObject(
+                    new JProperty("event", "auth_error"),
+                    new JProperty("userId", context.Variables.ContainsKey("userId") ? (string)context.Variables["userId"] : "unknown"),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("operationId", context.RequestId),
+                    new JProperty("error", context.LastError.Message),
+                    new JProperty("errorReason", context.LastError.Reason)
+                ).ToString();
+            }</message>
+        </trace>
+    </on-error>
+</policies>
